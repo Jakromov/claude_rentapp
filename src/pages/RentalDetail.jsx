@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ChevronLeft, Plus, RefreshCw, CheckCircle } from 'lucide-react'
+import { ChevronLeft, Plus, RefreshCw, CheckCircle, FileText, FileCheck } from 'lucide-react'
 import { useRental } from '@/hooks/useRentals'
+import { calcTotalCharged } from '@/lib/tariffRates'
+import { printPdf } from '@/lib/printPdf'
+import { rentalAgreementDoc, doverenostDoc } from '@/lib/pdfTemplates'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,6 +31,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import StatusBadge from '@/components/StatusBadge'
+import PhotoUpload from '@/components/PhotoUpload'
 
 const emptyPayment = { amount: '', method: 'cash', paid_at: new Date().toISOString().split('T')[0], note: '' }
 
@@ -77,6 +81,14 @@ export default function RentalDetail() {
     }
   }
 
+  async function handlePrintAgreement() {
+    await printPdf(rentalAgreementDoc(rental))
+  }
+
+  async function handlePrintDoverenost() {
+    await printPdf(doverenostDoc(rental))
+  }
+
   function handleRenew() {
     // Navigate to new rental with pre-filled courier + scooter via state
     navigate('/rentals/new', {
@@ -93,10 +105,10 @@ export default function RentalDetail() {
   if (error) return <p className="p-6 text-destructive text-sm">{error}</p>
   if (!rental) return null
 
-  const balance = (() => {
-    // Simple display — total_charged not stored, show paid total only
-    return totalPaid
-  })()
+  const totalCharged = rental
+    ? calcTotalCharged(rental.tariff, rental.start_date, rental.end_date)
+    : 0
+  const balance = totalCharged - totalPaid
 
   const daysLeft = Math.ceil(
     (new Date(rental.end_date) - new Date()) / (1000 * 60 * 60 * 24),
@@ -164,17 +176,53 @@ export default function RentalDetail() {
         <InfoRow label="End Date" value={rental.end_date} />
       </div>
 
+      {/* Photos */}
+      <div className="rounded-lg border bg-card p-5 mb-4">
+        <p className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Photos</p>
+        <PhotoUpload
+          rentalId={rental.id}
+          photos={rental.photos || []}
+          onUpdate={async (newPhotos) => {
+            await updatePhotos(newPhotos)
+          }}
+        />
+      </div>
+
+      {/* PDF Actions */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <Button variant="outline" className="w-full sm:w-auto" onClick={handlePrintAgreement}>
+          <FileText size={14} className="mr-2" />
+          Print Rental Agreement
+        </Button>
+        <Button variant="outline" className="w-full sm:w-auto" onClick={handlePrintDoverenost}>
+          <FileCheck size={14} className="mr-2" />
+          Print Doverenost
+        </Button>
+      </div>
+
       {/* Payments */}
       <div className="rounded-lg border bg-card p-5 mb-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
             Payments
           </p>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <span className="text-sm font-medium">
-              Total paid:{' '}
-              <span className="text-green-700">{totalPaid.toLocaleString()}</span>
+              Charged:{' '}
+              <span className="font-mono">{totalCharged.toLocaleString()}</span>
             </span>
+            <span className="text-sm font-medium">
+              Paid:{' '}
+              <span className="text-green-700 font-mono">{totalPaid.toLocaleString()}</span>
+            </span>
+            {balance > 0 && (
+              <span className="text-sm font-medium text-red-600">
+                Balance: <span className="font-mono">{balance.toLocaleString()}</span>
+              </span>
+            )}
+            {balance <= 0 && totalCharged > 0 && (
+              <span className="text-sm text-green-700 font-medium">Paid in full</span>
+            )}
             {rental.status === 'active' && (
               <Button size="sm" onClick={() => setPayOpen(true)}>
                 <Plus size={14} className="mr-1" />
